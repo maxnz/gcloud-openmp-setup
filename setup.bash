@@ -105,7 +105,7 @@ get_quota() {
 }
 
 confirm_opts() {
-    INSTANCES=`gcloud compute instances list &> /dev/null`
+    INSTANCES=`gcloud compute instances list 2> /dev/null`
 
     for ((i=0;;i++))
     do
@@ -161,7 +161,10 @@ config_vm() {
      cd /etc/skel; \
      sudo wget http://csinparallel.cs.stolaf.edu/CSinParallel.tar.gz; \
      sudo tar -xf CSinParallel.tar.gz && sudo rm CSinParallel.tar.gz; \
-     sudo cp -r /etc/skel/CSinParallel ~"
+     sudo cp -r /etc/skel/CSinParallel ~; \
+     sudo chmod -R 777 ~/CSinParallel; \
+     sudo mkdir /etc/skel/.ssh;
+     sudo touch /etc/skel/.ssh/authorized_keys"
 }
 
 

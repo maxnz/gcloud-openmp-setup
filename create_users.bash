@@ -11,10 +11,15 @@ USERCOL=
 KEYCOL=
 re_num='^[0-9]+$'
 NAME="openmp-"
+NAMED=0
+VMID=
+VMIP=
+VMZONE=
+INVALID=0
 
 
 add_user() {
-    RET=`gcloud compute ssh $MASTERID $MZONE --command \
+    RET=`gcloud compute ssh $VMID $VMZONE --command \
         "sudo useradd -m -s /bin/bash \"$USERNAME\";" 2>&1`
 
     echo $RET | grep "already exists" &> /dev/null
@@ -25,29 +30,17 @@ add_user() {
     then
         echo "$USERNAME: User exists - checking key"
 
-        gcloud compute ssh $MASTERID $MZONE --command "sudo cat /home/$USERNAME/.ssh/authorized_keys" | \
+        gcloud compute ssh $VMID $VMZONE --command "sudo cat /home/$USERNAME/.ssh/authorized_keys" | \
         grep -Fx "$KEY" &> /dev/null
         if [[ $? == 0 ]]; then RET2=0; fi;
     else
         echo "$USERNAME: Creating new user"
-
-        let "NUMVM=$(wc workers -l | cut -d ' ' -f 1)"
-        for ((i=2;i<=NUMVM;i++))
-        do
-            WORKER=`sed "${i}q;d" workers`
-            WORKERID=`echo $WORKER | cut -d ' ' -f 2`
-            WZONE=`echo $WORKER | cut -d ' ' -f 3`
-            WZONE="--zone $WZONE"
-            gcloud compute ssh $WORKERID $WZONE --command "sudo useradd -M -s /bin/bash $USERNAME;" &> /dev/null
-            echo -n '.'
-        done
-        echo
     fi
 
     if [[ $RET2 == 1 ]]
     then
         echo "Adding new SSH key"
-        gcloud compute ssh $MASTERID $MZONE --command \
+        gcloud compute ssh $VMID $VMZONE --command \
         "echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null; \
          echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null; \
          echo \"$KEY\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;"
@@ -72,10 +65,9 @@ ask_project() {
 }
 
 get_vm() {
-    VM=`sed "$(($1 + 1))q;d" workers.temp | grep "RUNNING" | sed 's/  \+/ /g' | cut -d ' ' -f 4`
-    VM="$WORKER $(sed "$(($1 + 1))q;d" workers.temp | grep "RUNNING" | sed 's/  \+/ /g' | cut -d ' ' -f 1,2)"
+    VM=`sed "$(($1 + 1))q;d" vms.temp | grep "RUNNING" | sed 's/  \+/ /g' | cut -d ' ' -f 1,2`
 
-    echo $WORKER | grep "$NAME" &> /dev/null
+    echo $VM | grep "$NAME" &> /dev/null
     if [[ $? != 0 ]]
     then
         VM=
@@ -91,13 +83,49 @@ find_vm() {
         get_vm $i
         if ! [[ -z $VM ]]
         then
+            if [[ $NAMED == 1 ]]; then echo "Using VM $NAME"; break; fi;
+            echo -n "Use VM $(echo $VM | cut -d ' ' -f 1)? (Y/n): "
+            read con
+            con=`echo $con | head -c1`
+            if [[ $con == 'n' || $con == 'N' ]]
+            then
+                VM=
+                continue
+            fi
             break
         fi
     done
     rm vms.temp
+    if [[ -z $VM ]]; then echo "Could not find VM"; exit 1; fi;
+    VMID=`echo $VM | cut -d ' ' -f 1`
+    VMZONE=`echo $VM | cut -d ' ' -f 2`
+    VMZONE="--zone $VMZONE"
 }
 
+# Validate username format
+validate_username() {
+    echo $USERNAME | grep " " &> /dev/null
+    if [[ $? == 0 || $USERNAME == "" ]]
+    then
+        echo "$USERNAME: Skipping: Invalid Username"
+        let "INVALID++"
+    fi
+}
+
+# Validate key format
+validate_key() {
+    keywc=`echo $KEY | wc -w | cut -d ' ' -f 1`
+
+    if [[ $KEY == "" || $keywc != 3 ]]
+    then
+        echo "$USERNAME: Skipping: Invalid SSH key"
+        let "INVALID++"
+    fi
+}
+
+# Automated entry from a .csv file
 auto_entry() {
+    # Install csvtool if necessary
     apt list csvtool | grep "installed" &> /dev/null
     if [[ $? != 0 ]]
     then
@@ -111,8 +139,9 @@ auto_entry() {
     fi
 
     ask_project
-    get_workers
+    find_vm
 
+    # Get username column if necessary
     if [[ -z $USERCOL ]]
     then
         echo -n "Specify username column number: "
@@ -123,6 +152,7 @@ auto_entry() {
         fi
     fi
 
+    # Get key column if necessary
     if [[ -z $KEYCOL ]]
     then
         echo -n "Specify ssh key column number: "
@@ -135,37 +165,26 @@ auto_entry() {
 
     NUMKEY=`csvtool height $FILENAME`
     
+    # Add all users
     for ((i=2;i<=NUMKEY;i++))
     do
         USERNAME=`csvtool col $USERCOL $FILENAME | sed "${i}q;d"`
         KEY=`csvtool col $KEYCOL $FILENAME | sed "${i}q;d"`
 
-        echo $USERNAME | grep " " &> /dev/null
-        if [[ $? == 0 || $USERNAME == "" ]]
-        then
-            echo "$USERNAME: Skipping Username: Invalid Username"
-            continue
-        fi
-
-        keywc=`echo $KEY | wc -w | cut -d ' ' -f 1`
-
-        if [[ $KEY == "" || $keywc != 3 ]]
-        then
-            echo "$USERNAME: Skipping Username: Invalid SSH key"
-            continue
-        fi
-
+        INVALID=0
+        validate_username
+        validate_key
+        if [ $INVALID -gt 0 ]; then continue; fi;
         add_user
     done
 
     echo
 }
 
-
+# Manual entry by user
 manual_entry() {
     ask_project
-    get_workers
-    
+    find_vm
 
     while true 
     do
@@ -173,12 +192,7 @@ manual_entry() {
         echo -n "Enter new username (leave blank to quit): "
         read USERNAME
 
-        echo $USERNAME | grep " " &> /dev/null
-        if [[ $? == 0 ]]
-        then
-            echo "Invalid Username"
-            continue
-        elif [[ $USERNAME == "" ]]
+        if [[ $USERNAME == "" ]]
         then
             break
         fi
@@ -186,17 +200,15 @@ manual_entry() {
         echo -n "Enter SSH key for $USERNAME: "
         read KEY
 
-        keywc=`echo $KEY | wc -w | cut -d ' ' -f 1`
-
         if [[ $KEY == "" ]]
         then
             break
-        elif [[ $keywc != 3 ]]
-        then
-            echo "Invalid ssh key: Need 3 fields"
-            echo "Skipping user $USERNAME"
-            continue
         fi
+
+        INVALID=0
+        validate_username
+        validate_key
+        if [ $INVALID -gt 0 ]; then continue; fi;
         add_user
     done
 }
@@ -213,6 +225,9 @@ do
             echo "Options:"
             echo "-h,   --help          show this help message"
             echo "-p,   --project ID    set the project to use (ID = full project id)"
+            echo "-n,   --name NAME     specify the name of the VM to be configured"
+            echo "                          if not specified, will look for VMs"
+            echo "                          starting with 'openmp-'"
             echo
             echo "-f FILE               specify the .csv file (FILE) to use"
             echo "-k N                  specify the column number (N) with the ssh keys"
@@ -228,6 +243,17 @@ do
                 shift
             else
                 missing_argument "-f"
+            fi
+            ;;
+        -n|--name)
+            shift
+            if test $# -gt 0
+            then
+                NAME=$1
+                NAMED=1
+                shift
+            else
+                missing_argument "-n|--name"
             fi
             ;;
         -p|--project)
