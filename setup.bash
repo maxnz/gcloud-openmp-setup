@@ -163,7 +163,7 @@ config_vm() {
      sudo tar -xf CSinParallel.tar.gz && sudo rm CSinParallel.tar.gz; \
      sudo cp -r /etc/skel/CSinParallel ~; \
      sudo chmod -R 777 ~/CSinParallel; \
-     sudo mkdir /etc/skel/.ssh;
+     sudo mkdir /etc/skel/.ssh; \
      sudo touch /etc/skel/.ssh/authorized_keys"
 }
 
