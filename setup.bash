@@ -182,7 +182,11 @@ do
             echo
             echo "-q,   --quiet         run the script with default options (unless specified otherwise):"
             echo "                          8 cores"
-            echo "-c [1|2|4|8|16|32|64|96]  set the number of cores in the VM"
+            echo
+            echo "      --prefix        specify the prefix to use when naming the VM"
+            echo "-c [1|2|4|8|16|32|64|96]"
+            echo "                      set the number of cores in the VM"
+            echo "                          default=8"
             exit -1
             ;;
         -q|--quiet)
@@ -217,6 +221,16 @@ do
                 shift
             else
                 missing_argument "-p|--project"
+            fi
+            ;;
+        --prefix)
+            shift
+            if test $# -gt 0
+            then
+                PREFIX=$1
+                shift
+            else
+                missing_argument "--prefix"
             fi
             ;;
         *)
