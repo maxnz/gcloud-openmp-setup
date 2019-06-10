@@ -95,6 +95,7 @@ get_quota() {
                 if [ $REMCPUS -lt $VMCORES ]
                 then
                     echo "Not enough CPUs remaining in quota: $REMCPUS remaining"
+                    rm quotas.temp
                     exit 1
                 fi
                 break
