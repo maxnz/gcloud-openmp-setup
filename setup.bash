@@ -4,7 +4,7 @@ USED_ZONES=
 NUMUSEDZONES=0
 OLD_PROJECT=`gcloud config list project 2> /dev/null | grep "project = " | cut -d ' ' -f 3`
 PROJECT=
-PREFIX='openmp-'
+PREFIX='openmp-'        # Must start with a letter
 VMCORES=8
 re_num='^[0-9]+$'
 QUIET=0
@@ -184,7 +184,7 @@ do
             echo "-q,   --quiet         run the script with default options (unless specified otherwise):"
             echo "                          8 cores"
             echo
-            echo "      --prefix        specify the prefix to use when naming the VM"
+            echo "      --prefix        specify the prefix to use when naming the VM (must start with a letter)"
             echo "-c [1|2|4|8|16|32|64|96]"
             echo "                      set the number of cores in the VM"
             echo "                          default=8"
