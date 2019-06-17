@@ -228,7 +228,7 @@ do
             shift
             if test $# -gt 0
             then
-                PREFIX=$1
+                PREFIX="$1-"
                 shift
             else
                 missing_argument "--prefix"

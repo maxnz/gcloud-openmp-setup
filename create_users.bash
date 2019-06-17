@@ -169,8 +169,8 @@ auto_entry() {
     # Add all users
     for ((i=2;i<=NUMKEY;i++))
     do
-        USERNAME=`csvtool col $USERCOL $FILENAME | sed "${i}q;d"`
-        KEY=`csvtool col $KEYCOL $FILENAME | sed "${i}q;d"`
+        USERNAME=`csvtool col $USERCOL $FILENAME | sed "${i}q;d" | sed 's/"//g'`
+        KEY=`csvtool col $KEYCOL $FILENAME | sed "${i}q;d" | sed 's/"//g'`
 
         INVALID=0
         validate_username
