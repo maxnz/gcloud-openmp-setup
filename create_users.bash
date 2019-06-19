@@ -19,38 +19,33 @@ INVALID=0
 
 
 add_user() {
-    RET=`gcloud compute ssh $VMID $VMZONE --command \
-        "sudo useradd -m -s /bin/bash \"$USERNAME\";" 2>&1`
-
-    echo $RET | grep "already exists" &> /dev/null
-    RET=$?
-    RET2=1
-
-    if [[ $RET == 0 ]]
+    if grep $USERNAME users.temp &> /dev/null
     then
-        echo "$USERNAME: User exists - checking key"
-
-        gcloud compute ssh $VMID $VMZONE --command "sudo cat /home/$USERNAME/.ssh/authorized_keys" | \
-        grep -Fx "$KEY" &> /dev/null
-        if [[ $? == 0 ]]; then RET2=0; fi;
-    else
-        echo "$USERNAME: Creating new user"
-    fi
-
-    if [[ $RET2 == 1 ]]
-    then
-        echo "Adding new SSH key"
+        echo -n "$USERNAME: User exists - checking key..."
         gcloud compute ssh $VMID $VMZONE --command \
-        "echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null; \
-         echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null; \
+        "if ! sudo cat /home/$USERNAME/.ssh/authorized_keys | grep -Fx \"$KEY\" &> /dev/null; then
+         echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+         echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+         echo \"$KEY\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+         echo -n Added Key;
+         fi;"
+        echo "done"
+    else
+        echo -n "$USERNAME: Creating new user..."
+        gcloud compute ssh $VMID $VMZONE --command \
+        "sudo useradd -m -s /bin/bash \"$USERNAME\";
+         echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+         echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
          echo \"$KEY\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;"
+        echo $USERNAME >> users.temp
+        echo "done"
     fi
 }
 
 ask_project() {
     if [[ $PSET == 0 ]]
     then
-        echo -n "Project Name (leave blank to use default project $OLD_PROJECT): "
+        echo -n "Project Name (leave blank to use current project $OLD_PROJECT): "
         read project
 
         if [[ $project != "" ]]
@@ -61,21 +56,22 @@ ask_project() {
     fi
 
     touch vms.temp
+    echo -n "Getting VMs..."
     gcloud compute instances list > vms.temp
+    echo "done"
 }
 
 get_vm() {
     VM=`sed "$(($1 + 1))q;d" vms.temp | grep "RUNNING" | sed 's/  \+/ /g' | cut -d ' ' -f 1,2`
 
-    echo $VM | grep "$NAME" &> /dev/null
-    if [[ $? != 0 ]]
+    if ! echo $VM | grep "$NAME" &> /dev/null
     then
         VM=
     fi
 }
 
 find_vm() {
-    NUMVM=`gcloud compute instances list | wc -l | cut -d ' ' -f 1`
+    NUMVM=`wc -l vms.temp | cut -d ' ' -f 1`
     let "NUMVM -= 1"
 
     for ((i=1;i<=NUMVM;i++))
@@ -95,7 +91,6 @@ find_vm() {
             break
         fi
     done
-    rm vms.temp
     if [[ -z $VM ]]; then echo "Could not find VM"; exit 1; fi;
     VMID=`echo $VM | cut -d ' ' -f 1`
     VMZONE=`echo $VM | cut -d ' ' -f 2`
@@ -125,22 +120,7 @@ validate_key() {
 
 # Automated entry from a .csv file
 auto_entry() {
-    # Install csvtool if necessary
-    apt list csvtool | grep "installed" &> /dev/null
-    if [[ $? != 0 ]]
-    then
-        if [ "$EUID" -ne 0 ]
-        then 
-            echo "sudo required"
-            echo "Try running the script again with sudo"
-            exit 1
-        else
-            sudo apt install csvtool
-        fi
-    fi
-
-    ask_project
-    find_vm
+    sed -i 's/"//g' $FILENAME
 
     # Get username column if necessary
     if [[ -z $USERCOL ]]
@@ -184,12 +164,9 @@ auto_entry() {
 
 # Manual entry by user
 manual_entry() {
-    ask_project
-    find_vm
 
     while true 
     do
-        echo
         echo -n "Enter new username (leave blank to quit): "
         read USERNAME
 
@@ -305,17 +282,45 @@ done
 
 if [[ $AUTO == 1 ]]
 then
-    echo "Automatic Entry"
+    # Check if csvtool is installed
+    if ! apt list csvtool | grep "installed" &> /dev/null
+    then
+        if [ "$EUID" -ne 0 ]
+        then 
+            echo "Please install csvtool using:"
+            echo "  sudo apt install csvtool"
+            echo "to use automatic entry"
+            exit 1
+        fi
+    fi
+fi
+
+ask_project
+find_vm
+
+touch users.temp
+echo -n "Finding users..."
+gcloud compute ssh $VMID $VMZONE --command "getent passwd | grep '/home' | cut -d ':' -f 1" > users.temp
+echo "done"
+
+
+if [[ $AUTO == 1 ]]
+then
+    echo "Using Automatic Entry"
     auto_entry
 else
-    echo "Manual Entry"
+    echo "Using Manual Entry"
     manual_entry
 fi
 
 echo -n "VM IP..."
-gcloud compute instances list | sed 's/  \+/ /g' | grep $VMID | cut -d ' ' -f 5
+if [ -e vms.temp ]; then cat vms.temp | sed 's/  \+/ /g' | grep $VMID | cut -d ' ' -f 5;
+else gcloud compute instances list | sed 's/  \+/ /g' | grep $VMID | cut -d ' ' -f 5; fi;
 
 if [[ $PROJECT != $OLD_PROJECT ]]
 then
     set_project $OLD_PROJECT
 fi
+
+if [ -e users.temp ]; then rm users.temp; fi;
+if [ -e vms.temp ]; then rm vms.temp; fi;

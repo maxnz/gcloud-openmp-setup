@@ -185,6 +185,7 @@ do
             echo "                          8 cores"
             echo
             echo "      --prefix        specify the prefix to use when naming the VM (must start with a letter)"
+            echo "                          the script will add a -# when naming the VM"
             echo "-c [1|2|4|8|16|32|64|96]"
             echo "                      set the number of cores in the VM"
             echo "                          default=8"
