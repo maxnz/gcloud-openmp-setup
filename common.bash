@@ -19,13 +19,13 @@ export -f missing_argument
 
 # Set the project being set up
 set_project() {
+    echo -n "Setting project to $1..."
     gcloud projects list | sed 's/  \+/ /g' | grep "$1 " &> /dev/null
     if [[ $? == 1 ]]
     then
         echo "Invalid project id $1"
         exit 1
     fi
-    echo -n "Setting project to $1..."
     gcloud config set project $1 &> /dev/null
     echo "done"
     PROJECT=$1

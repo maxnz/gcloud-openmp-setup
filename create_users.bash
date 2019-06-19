@@ -22,13 +22,17 @@ add_user() {
     if grep $USERNAME users.temp &> /dev/null
     then
         echo -n "$USERNAME: User exists - checking key..."
-        gcloud compute ssh $VMID $VMZONE --command \
-        "if ! sudo cat /home/$USERNAME/.ssh/authorized_keys | grep -Fx \"$KEY\" &> /dev/null; then
-         echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
-         echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
-         echo \"$KEY\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
-         echo -n Added Key;
-         fi;"
+        if ! grep -Fx "$KEY" keys.temp/$USERNAME &> /dev/null
+        then
+            echo -n "adding key...";
+            gcloud compute ssh $VMID $VMZONE --command \
+            "echo | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+             echo \"# $USERNAME\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;
+             echo \"$KEY\" | sudo tee -a /home/$USERNAME/.ssh/authorized_keys &> /dev/null;"
+            echo > keys.temp/$USERNAME &> /dev/null;
+            echo "# $USERNAME" > keys.temp/$USERNAME &> /dev/null;
+            echo \"$KEY\" > keys.temp/$USERNAME &> /dev/null;
+        fi
         echo "done"
     else
         echo -n "$USERNAME: Creating new user..."
@@ -301,6 +305,10 @@ find_vm
 touch users.temp
 echo -n "Finding users..."
 gcloud compute ssh $VMID $VMZONE --command "getent passwd | grep '/home' | cut -d ':' -f 1" > users.temp
+USERS=`cat users.temp | tr '\n' ' '`
+echo -n "keys..."
+gcloud compute ssh $MASTERID $MZONE --command "mkdir keys.temp; for user in $USERS; do sudo cat /home/\$user/.ssh/authorized_keys > keys.temp/\$user; done;" &> /dev/null
+gcloud compute scp $MZONE --recurse $MASTERID:keys.temp . &> /dev/null
 echo "done"
 
 
@@ -324,3 +332,4 @@ fi
 
 if [ -e users.temp ]; then rm users.temp; fi;
 if [ -e vms.temp ]; then rm vms.temp; fi;
+if [ -e keys.temp ]; then rm -r keys.temp; fi;
